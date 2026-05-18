@@ -1,0 +1,42 @@
+name: Rebuild topic map
+
+on:
+  schedule:
+    # Daily at 06:00 UTC (08:00 Vilnius time)
+    - cron: "0 6 * * *"
+  workflow_dispatch:  # Allow manual trigger from GitHub UI
+  push:
+    branches: [main]
+    paths:
+      - "build.py"
+      - ".github/workflows/build.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run build
+        run: python build.py
+
+      - name: Commit updated index.html if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html
+          if git diff --staged --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "Auto-rebuild topic map ($(date -u +'%Y-%m-%d %H:%M UTC'))"
+            git push
+          fi
