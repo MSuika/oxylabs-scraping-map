@@ -250,6 +250,7 @@ HTML_TEMPLATE = r'''<!DOCTYPE html>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Oxylabs.io Topic Map</title>
+<link rel="icon" type="image/webp" href="Oxylabs_logo.webp">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
