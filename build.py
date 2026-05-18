@@ -17,7 +17,7 @@ from collections import defaultdict
 from urllib.request import urlopen, Request
 from urllib.error import URLError, HTTPError
 
-SITEMAP_URL = "https://oxylabs.io/sitemap.xml"
+SITEMAP_URL = "https://oxylabs.io/f3h5j7k9m2n4p6q8r0.xml"
 USER_AGENT = "OxylabsTopicMap/1.0 (+github.com/MSuika/oxylabs-scraping-map)"
 
 # ---------- 1. Fetch ----------
