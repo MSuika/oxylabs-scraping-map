@@ -35,15 +35,9 @@ def fetch_sitemap(url: str) -> str:
 # ---------- 2. Filter noise ----------
 
 EXCLUDE_PATTERNS = [
-    r'/blog/page/\d+', r'/blog/authors/', r'/legal/', r'/press-area',
-    r'/oxycopilot-story', r'/sustainability', r'/risk-and-legal-compliance',
-    r'/kyc-and-safety', r'/what-is-my-ip', r'/about-us', r'/affiliates',
-    r'/blog/oxylabs-shortlisted', r'/blog/oxylabs-wins', r'/blog/oxylabs-announces',
-    r'/blog/.*accreditation', r'/blog/.*-partnership', r'/blog/empowering-the-',
-    r'/blog/authors$', r'/blog/cyber-insurance', r'/blog/code-university',
-    r'/blog/ai4-conference', r'/blog/devworld-', r'/blog/conference-',
-    r'/blog/2-weeks-until-oxycon', r'/oxycon/', r'/blog/oxycon',
-    r'/project-4beta', r'/blog/free-white-paper',
+    r'/blog/page/\d+',
+    r'/blog/authors/',
+    r'/blog/authors$',
 ]
 
 def is_excluded(url: str) -> bool:
@@ -97,9 +91,23 @@ def classify(url: str):
         if 'market-research' in slug:         return ('Solutions', 'Market research')
         return ('Solutions', 'Other industry solutions')
 
-    if slug.startswith('tools/'):     return ('Free Tools', 'Free scraping tools')
-    if slug.startswith('features/'):  return ('Product Features', 'Feature pages')
-    if slug.startswith('pricing'):    return ('Pricing', 'Pricing pages')
+    if slug.startswith('tools/'):      return ('Free Tools', 'Free scraping tools')
+    if slug == 'what-is-my-ip':        return ('Free Tools', 'Free scraping tools')
+    if slug.startswith('features/'):   return ('Product Features', 'Feature pages')
+    if slug.startswith('pricing'):     return ('Pricing', 'Pricing pages')
+
+    # ===== COMPANY & BRAND =====
+    if slug in ('about-us', 'sustainability', 'press-area', 'affiliates',
+                'oxycopilot-story', 'project-4beta', 'careers'):
+        return ('Company & Brand', 'Company pages')
+    if slug.startswith('oxycon'):
+        return ('Company & Brand', 'Events & community')
+
+    # ===== LEGAL & TRUST =====
+    if slug.startswith('legal'):
+        return ('Legal & Trust', 'Legal documents')
+    if slug in ('risk-and-legal-compliance', 'kyc-and-safety'):
+        return ('Legal & Trust', 'Compliance & trust')
 
     # ===== RESOURCES =====
     if slug.startswith('resources/'):
@@ -110,7 +118,7 @@ def classify(url: str):
         if 'ebooks' in slug or 'whitepapers' in slug or 'webinars' in slug or 'reports' in slug: return ('Resources', 'Ebooks/whitepapers/webinars')
         return ('Resources', 'Other resources')
 
-    if slug.startswith('developers') or slug.startswith('oxycon'):
+    if slug.startswith('developers'):
         return ('Developer / Community', 'Developer pages')
 
     # ===== BLOG =====
@@ -147,6 +155,13 @@ def classify(url: str):
             return ('Blog - API & networking', 'API/networking tutorials')
         if any(k in b for k in ['ip-address','geolocation','geo-target','vpn','tor-']):
             return ('Blog - Networking', 'IP, geo, networking')
+        if any(k in b for k in ['oxylabs-shortlisted','oxylabs-wins','oxylabs-announces',
+                                  'oxylabs-launches','accreditation','-partnership',
+                                  'empowering-the-','free-white-paper']):
+            return ('Blog - Company News', 'Company announcements & PR')
+        if any(k in b for k in ['oxycon','devworld-','conference-','ai4-conference',
+                                  'code-university','cyber-insurance','2-weeks-until']):
+            return ('Blog - Events', 'Events & community')
 
         return ('Blog - Other', 'Other blog content')
 
@@ -174,12 +189,20 @@ GROUPS = {
                      "Blog - Target sites", "Blog - SERP", "Blog - Proxies", "Blog - Anti-bot & evasion",
                      "Blog - AI & data", "Blog - E-commerce & pricing intel", "Blog - Business use cases",
                      "Blog - Comparisons & reviews", "Blog - Legal & compliance", "Blog - API & networking",
-                     "Blog - Networking", "Blog - Other", "Blog hubs"]
+                     "Blog - Networking", "Blog - Company News", "Blog - Events", "Blog - Other", "Blog hubs"]
     },
     "Resources & Docs": {
         "color": "#E74C3C",
         "clusters": ["Resources", "Developer / Community", "Pricing"]
-    }
+    },
+    "Company & Brand": {
+        "color": "#27AE60",
+        "clusters": ["Company & Brand"]
+    },
+    "Legal & Trust": {
+        "color": "#95A5A6",
+        "clusters": ["Legal & Trust"]
+    },
 }
 
 
@@ -189,7 +212,7 @@ def build_tree(urls):
         primary, sub = classify(u)
         clusters[primary][sub].append(u)
 
-    tree = {"name": "Oxylabs Web Scraping Coverage", "children": []}
+    tree = {"name": "oxylabs.io", "children": []}
     for group_name, info in GROUPS.items():
         group_node = {"name": group_name, "color": info["color"], "children": []}
         for cl_name in info["clusters"]:
@@ -226,7 +249,7 @@ HTML_TEMPLATE = r'''<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Oxylabs Web Scraping Topic Map</title>
+<title>Oxylabs.io Topic Map</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -272,8 +295,8 @@ HTML_TEMPLATE = r'''<!DOCTYPE html>
 </head>
 <body>
 <div class="header">
-  <h1>Oxylabs - Web Scraping Topic Coverage Map</h1>
-  <div class="subtitle">__TOTAL__ scraping-related URLs from oxylabs.io sitemap. Click nodes to expand. Drag to pan, scroll to zoom.</div>
+  <h1>Oxylabs.io — Full Website Topic Map</h1>
+  <div class="subtitle">__TOTAL__ URLs from oxylabs.io sitemap. Click nodes to expand. Drag to pan, scroll to zoom.</div>
   <div class="build">Last rebuilt: __BUILD_DATE__ (rebuilds daily via GitHub Actions)</div>
 </div>
 <div class="stats" id="stats"></div>
@@ -302,7 +325,7 @@ const TOTAL = __TOTAL__;
 const statsEl = document.getElementById('stats');
 const totalCard = document.createElement('div');
 totalCard.className = 'stat-card';
-totalCard.innerHTML = `<div class="name">Total scraping URLs</div><div class="count">${TOTAL.toLocaleString()}</div><div class="share">across 5 content groups</div>`;
+totalCard.innerHTML = `<div class="name">Total URLs indexed</div><div class="count">${TOTAL.toLocaleString()}</div><div class="share">across ${GROUP_SUMMARY.length} content groups</div>`;
 statsEl.appendChild(totalCard);
 GROUP_SUMMARY.forEach(g => {
   const el = document.createElement('div');
@@ -498,7 +521,7 @@ def main():
         f.write(html)
 
     print(f"OK. Wrote index.html ({len(html):,} bytes).")
-    print(f"Total scraping-related URLs: {total}")
+    print(f"Total URLs indexed: {total}")
     for g in group_summary:
         print(f"  {g['name']}: {g['count']} ({g['share']}%)")
 
