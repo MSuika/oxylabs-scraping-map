@@ -116,6 +116,12 @@ def main():
 
     meta = {"property": PROPERTY, "start_date": start_date, "end_date": end_date, "fetched_on": today}
     (cache_dir / "meta.json").write_text(json.dumps(meta, indent=2))
+
+    # Copy page_date to project root so CI (and build.py) can use it without the full cache dir
+    import shutil
+    snapshot = Path(__file__).parent / "gsc_data.json.gz"
+    shutil.copy2(cache_dir / "page_date.json.gz", snapshot)
+    print(f"Updated gsc_data.json.gz ({snapshot.stat().st_size // 1024}KB) — commit this file for CI access.")
     print(f"\nDone. Cache: {cache_dir.relative_to(Path(__file__).parent)}/")
 
 

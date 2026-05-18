@@ -28,12 +28,17 @@ USER_AGENT = "OxylabsTopicMap/1.0 (+github.com/MSuika/oxylabs-scraping-map)"
 # ---------- 0. GSC Cache ----------
 
 def load_gsc_metrics() -> dict:
-    """Load page-level GSC metrics from the latest local cache. Returns {} if unavailable."""
-    cache_root = Path(__file__).parent / "cache"
-    dirs = sorted(cache_root.glob("gsc_*"), reverse=True)
-    if not dirs:
-        return {}
-    path = dirs[0] / "page_date.json.gz"
+    """Load page-level GSC metrics. Prefers gsc_data.json.gz (committed snapshot for CI),
+    falls back to latest cache/gsc_*/page_date.json.gz."""
+    root = Path(__file__).parent
+    committed = root / "gsc_data.json.gz"
+    if committed.exists():
+        path = committed
+    else:
+        dirs = sorted((root / "cache").glob("gsc_*"), reverse=True)
+        if not dirs:
+            return {}
+        path = dirs[0] / "page_date.json.gz"
     if not path.exists():
         return {}
     try:
