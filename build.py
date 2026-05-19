@@ -449,8 +449,10 @@ HTML_TEMPLATE = r'''<!DOCTYPE html>
   .stat-card .count { font-size: 18px; font-weight: 700; letter-spacing: -0.02em; }
   .stat-card .clicks-sub { font-size: 11px; font-weight: 400; color: #8893a8; margin-left: 2px; }
   .stat-card .share { font-size: 10px; color: #8893a8; }
-  .legend { position: fixed; bottom: 16px; left: 16px; background: rgba(20,26,42,0.92); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 10px 14px; font-size: 11px; color: #b8c2d6; max-width: 280px; z-index: 50; line-height: 1.5; }
-  .legend strong { color: #e8edf5; font-size: 12px; display: block; margin-bottom: 4px; }
+  .legend { position: fixed; bottom: 16px; left: 16px; background: rgba(20,26,42,0.92); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 10px 14px; font-size: 11px; color: #b8c2d6; max-width: 330px; z-index: 50; line-height: 1.5; }
+  .legend strong { color: #e8edf5; font-size: 12px; display: block; margin-bottom: 6px; }
+  .legend-row { margin-top: 5px; line-height: 1.5; }
+  .legend-key { font-weight: 600; color: #e8edf5; margin-right: 4px; }
   .controls { position: fixed; top: 80px; right: 16px; display: flex; gap: 6px; z-index: 50; align-items: center; }
   .btn { background: rgba(20,26,42,0.92); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.1); color: #e8edf5; padding: 7px 12px; border-radius: 6px; font-size: 12px; cursor: pointer; font-family: inherit; transition: all 0.15s; }
   .btn:hover { background: rgba(40,50,75,0.95); border-color: rgba(255,255,255,0.2); }
@@ -673,9 +675,18 @@ function updateSubtitle() {
 
 function updateLegend() {
   const ds = DATASETS[activeKey];
-  document.getElementById('legend-hint').textContent = ds.total_clicks > 0
-    ? `Bubble size = clicks (${ds.label}). Number inside bubble = total clicks. Click any node to expand, or leaf nodes to see page-level data.`
-    : 'Bubble size = URL count. Click any node to expand, or leaf nodes to see page-level data.';
+  const sizeHint = ds.total_clicks > 0
+    ? `Bubble size = <b>clicks</b> (${ds.label}). Number inside = total.`
+    : `Bubble size = <b>URL count</b> (no GSC data for this range).`;
+  document.getElementById('legend-hint').innerHTML = `
+    <div class="legend-row"><span class="legend-key">Structure</span>oxylabs.io &rarr; color groups &rarr; clusters &rarr; sub-clusters &rarr; pages</div>
+    <div class="legend-row"><span class="legend-key">Bubbles</span>${sizeHint} Root bubble = site total.</div>
+    <div class="legend-row"><span class="legend-key" style="color:#27AE60">NEW</span>Page added to sitemap in last 7 days. GSC data shows &mdash; until indexed.</div>
+    <div class="legend-row"><span class="legend-key">Range</span>7d / 28d / 90d toggle changes the GSC data window.</div>
+    <div class="legend-row"><span class="legend-key">Navigate</span>Click node to expand/collapse &middot; click leaf to view page data &middot; drag to pan &middot; scroll to zoom.</div>
+    <div class="legend-row"><span class="legend-key">Search</span>Type to highlight matching nodes &middot; Enter / Shift+Enter to cycle &middot; Esc to clear.</div>
+    <div class="legend-row"><span class="legend-key">Export</span>CSV or XLSX available in any open URL panel.</div>
+  `;
 }
 
 const width = window.innerWidth, height = window.innerHeight;
