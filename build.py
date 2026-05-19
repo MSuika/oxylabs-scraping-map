@@ -631,8 +631,19 @@ function navigateToIdx(idx) {
     revealAndZoom(_searchMatches[idx]);
   } else {
     const m = _urlMatches[idx - _searchMatches.length];
-    revealAndZoom(m.node);
-    setTimeout(() => showFilteredUrls(m.node, m.urls), 500);
+    const d = m.node;
+    // Expand d itself (in case it's a cluster with collapsed children) and all ancestors
+    let node = d;
+    while (node) {
+      if (node._children) { node.children = node._children; node._children = null; }
+      node = node.parent;
+    }
+    update(root);
+    setTimeout(() => {
+      const scale = 1.6;
+      svg.transition().duration(500).call(zoom.transform, d3.zoomIdentity.translate(-d.y * scale, -d.x * scale).scale(scale));
+    }, 420);
+    setTimeout(() => showFilteredUrls(d, m.urls), 500);
   }
 }
 
@@ -859,10 +870,15 @@ function update(source) {
     .attr("r", d => nodeRadius(d))
     .attr("fill-opacity", d => d._children ? 0.4 : 1);
   const matchSet = new Set(_searchMatches);
+  const urlMatchNodes = new Set(_urlMatches.map(m => m.node));
+  const allMatchNodes = new Set([...matchSet, ...urlMatchNodes]);
+  const currentNode = _searchIdx < _searchMatches.length
+    ? _searchMatches[_searchIdx]
+    : (_urlMatches[_searchIdx - _searchMatches.length] || {}).node;
   nodeUpdate
-    .classed("search-match", d => matchSet.has(d))
-    .classed("search-current", d => d === _searchMatches[_searchIdx])
-    .classed("search-dim", d => _searchQuery.length > 0 && matchSet.size > 0 && !matchSet.has(d));
+    .classed("search-match", d => allMatchNodes.has(d))
+    .classed("search-current", d => d === currentNode)
+    .classed("search-dim", d => _searchQuery.length > 0 && allMatchNodes.size > 0 && !allMatchNodes.has(d));
   nodeUpdate.select("text.inner")
     .text(d => {
       if (!USE_CLICKS || !d.value) return '';
