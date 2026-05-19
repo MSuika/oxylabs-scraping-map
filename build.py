@@ -268,9 +268,47 @@ GROUPS = {
 }
 
 
-def build_tree(urls, gsc=None):
+def load_known_urls() -> dict:
+    """Load known_urls.json -> {url: first_seen_iso_date}"""
+    path = Path(__file__).parent / "known_urls.json"
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def save_known_urls(known_urls: dict):
+    path = Path(__file__).parent / "known_urls.json"
+    path.write_text(json.dumps(known_urls, sort_keys=True, indent=2), encoding="utf-8")
+
+
+def get_new_url_set(current_urls: list, known_urls: dict) -> set:
+    """Return set of URLs first seen within the last 7 days.
+    Updates known_urls in-place. On first run all URLs are backdated so nothing shows as NEW."""
+    today = datetime.date.today()
+    if not known_urls:
+        old_date = (today - datetime.timedelta(days=8)).isoformat()
+        for u in current_urls:
+            known_urls[u] = old_date
+        return set()
+    today_iso = today.isoformat()
+    cutoff = (today - datetime.timedelta(days=7)).isoformat()
+    new_urls = set()
+    for u in current_urls:
+        if u not in known_urls:
+            known_urls[u] = today_iso
+        if known_urls[u] >= cutoff:
+            new_urls.add(u)
+    return new_urls
+
+
+def build_tree(urls, gsc=None, new_urls=None):
     if gsc is None:
         gsc = {}
+    if new_urls is None:
+        new_urls = set()
     clusters = defaultdict(lambda: defaultdict(list))
     for u in urls:
         primary, sub = classify(u)
@@ -291,29 +329,44 @@ def build_tree(urls, gsc=None):
                     continue
                 url_data = []
                 sub_clicks = 0
+                sub_new = 0
                 for u in sub_urls:
                     m = gsc.get(u, {})
                     clicks = m.get("clicks", 0)
                     sub_clicks += clicks
-                    url_data.append({
+                    is_new = u in new_urls
+                    if is_new:
+                        sub_new += 1
+                    entry = {
                         "url": u,
                         "clicks": clicks,
                         "impressions": m.get("impressions", 0),
                         "position": m.get("position"),
-                    })
+                    }
+                    if is_new:
+                        entry["is_new"] = True
+                    url_data.append(entry)
                 url_data.sort(key=lambda x: (-x["clicks"], x["url"]))
-                cluster_node["children"].append({
+                sub_node = {
                     "name": sub_name,
                     "count": len(sub_urls),
                     "clicks": sub_clicks,
                     "urls": url_data,
-                })
+                }
+                if sub_new:
+                    sub_node["new_count"] = sub_new
+                cluster_node["children"].append(sub_node)
+            cluster_new = sum(c.get("new_count", 0) for c in cluster_node["children"])
+            if cluster_new:
+                cluster_node["new_count"] = cluster_new
             cluster_node["children"].sort(key=lambda x: (-x.get("clicks", 0), -x.get("count", 0)))
             # Collapse single-child clusters — the intermediate node adds no information
             if len(cluster_node["children"]) == 1:
                 only = cluster_node["children"][0]
                 cluster_node["clicks"] = only["clicks"]
                 cluster_node["urls"] = only["urls"]
+                if "new_count" in only:
+                    cluster_node["new_count"] = only["new_count"]
                 del cluster_node["children"]
             group_node["children"].append(cluster_node)
         group_node["children"].sort(
@@ -451,6 +504,8 @@ HTML_TEMPLATE = r'''<!DOCTYPE html>
   .pos-good { color: #27AE60; }
   .pos-mid { color: #F39C12; }
   .pos-low { color: #8893a8; }
+  .badge-new { display: inline-block; background: #27AE60; color: #fff; font-size: 9px; font-weight: 700; padding: 1px 5px; border-radius: 3px; margin-left: 5px; letter-spacing: 0.04em; vertical-align: middle; text-transform: uppercase; line-height: 1.6; }
+  .node text.new-label { font-size: 8px; fill: #27AE60; stroke: none; paint-order: normal; font-weight: 800; letter-spacing: 0.06em; }
   .tooltip { position: fixed; background: rgba(15,20,35,0.98); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.15); padding: 8px 12px; border-radius: 6px; font-size: 11px; pointer-events: none; opacity: 0; transition: opacity 0.15s; z-index: 200; max-width: 240px; }
   .tooltip.visible { opacity: 1; }
   .tooltip strong { font-size: 12px; display: block; margin-bottom: 2px; }
@@ -732,6 +787,13 @@ function update(source) {
       return label;
     });
 
+  nodeEnter.append("text")
+    .attr("class", "new-label")
+    .attr("x", 0)
+    .attr("text-anchor", "middle")
+    .attr("y", d => -(nodeRadius(d) + 4))
+    .text(d => d.data.new_count ? 'NEW' : '');
+
   nodeEnter.on("click", (event, d) => {
     if (d.depth === 0) return;
     if (d.children || d._children) {
@@ -764,6 +826,9 @@ function update(source) {
   nodeUpdate.select("text.outer")
     .attr("x", d => (d._children || d.children) && d.depth > 0 ? -nodeRadius(d) - 6 : nodeRadius(d) + 6)
     .attr("text-anchor", d => (d._children || d.children) && d.depth > 0 ? "end" : "start");
+
+  nodeUpdate.select("text.new-label")
+    .attr("y", d => -(nodeRadius(d) + 4));
 
   node.exit().transition().duration(400)
     .attr("transform", () => `translate(${source.y},${source.x})`)
@@ -807,6 +872,7 @@ function showTooltip(event, d) {
   let html = `<strong>${d.data.name}</strong>`;
   html += `<span class="metric">${urlCount} URL${urlCount===1?'':'s'}`;
   if (USE_CLICKS && clicks > 0) html += ` · ${fmtK(clicks)} clicks`;
+  if (d.data.new_count) html += ` · <span style="color:#27AE60;font-weight:700">${d.data.new_count} new</span>`;
   html += `</span>`;
   html += `<div class="hint">${hasChildren ? 'Click to ' + (d.children ? 'collapse' : 'expand') : 'Click to view page data'}</div>`;
   tooltip.innerHTML = html;
@@ -903,7 +969,8 @@ function renderTableBody() {
     const url = typeof item === 'string' ? item : item.url;
     const path = url.replace('https://oxylabs.io', '') || '/';
     const tr = document.createElement('tr');
-    let cells = `<td><a href="${url}" target="_blank" rel="noopener" class="url-link">${path}</a></td>`;
+    const newBadge = item.is_new ? '<span class="badge-new">new</span>' : '';
+    let cells = `<td><a href="${url}" target="_blank" rel="noopener" class="url-link">${path}</a>${newBadge}</td>`;
     if (USE_CLICKS) {
       const pos = item.position;
       const posLabel = (pos !== null && pos !== undefined) ? pos.toFixed(1) : '—';
@@ -990,6 +1057,11 @@ def main():
     urls = [u for u in urls if not is_excluded(u)]
     print(f"After excluding noise (legal, pagination, press): {len(urls)}")
 
+    known_urls = load_known_urls()
+    new_urls = get_new_url_set(urls, known_urls)
+    save_known_urls(known_urls)
+    print(f"New URLs (added in last 7d): {len(new_urls)}")
+
     datasets = {}
     total = None
     for key in RANGE_KEYS:
@@ -999,7 +1071,7 @@ def main():
             print(f"  {len(gsc):,} URLs with metrics.")
         else:
             print(f"  No data — bubbles will reflect URL counts for this range.")
-        tree = build_tree(urls, gsc=gsc)
+        tree = build_tree(urls, gsc=gsc, new_urls=new_urls)
         t, total_clicks, group_summary = compute_stats(tree)
         if total is None:
             total = t

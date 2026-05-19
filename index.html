@@ -80,6 +80,8 @@
   .pos-good { color: #27AE60; }
   .pos-mid { color: #F39C12; }
   .pos-low { color: #8893a8; }
+  .badge-new { display: inline-block; background: #27AE60; color: #fff; font-size: 9px; font-weight: 700; padding: 1px 5px; border-radius: 3px; margin-left: 5px; letter-spacing: 0.04em; vertical-align: middle; text-transform: uppercase; line-height: 1.6; }
+  .node text.new-label { font-size: 8px; fill: #27AE60; stroke: none; paint-order: normal; font-weight: 800; letter-spacing: 0.06em; }
   .tooltip { position: fixed; background: rgba(15,20,35,0.98); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.15); padding: 8px 12px; border-radius: 6px; font-size: 11px; pointer-events: none; opacity: 0; transition: opacity 0.15s; z-index: 200; max-width: 240px; }
   .tooltip.visible { opacity: 1; }
   .tooltip strong { font-size: 12px; display: block; margin-bottom: 2px; }
@@ -91,7 +93,7 @@
 <div class="header">
   <h1>Oxylabs.io — Full Website Topic Map</h1>
   <div class="subtitle" id="subtitle"></div>
-  <div class="build">Last rebuilt: 2026-05-19 10:27 UTC (rebuilds daily via GitHub Actions)</div>
+  <div class="build">Last rebuilt: 2026-05-19 10:42 UTC (rebuilds daily via GitHub Actions)</div>
 </div>
 <div class="stats" id="stats"></div>
 <div class="controls">
@@ -361,6 +363,13 @@ function update(source) {
       return label;
     });
 
+  nodeEnter.append("text")
+    .attr("class", "new-label")
+    .attr("x", 0)
+    .attr("text-anchor", "middle")
+    .attr("y", d => -(nodeRadius(d) + 4))
+    .text(d => d.data.new_count ? 'NEW' : '');
+
   nodeEnter.on("click", (event, d) => {
     if (d.depth === 0) return;
     if (d.children || d._children) {
@@ -393,6 +402,9 @@ function update(source) {
   nodeUpdate.select("text.outer")
     .attr("x", d => (d._children || d.children) && d.depth > 0 ? -nodeRadius(d) - 6 : nodeRadius(d) + 6)
     .attr("text-anchor", d => (d._children || d.children) && d.depth > 0 ? "end" : "start");
+
+  nodeUpdate.select("text.new-label")
+    .attr("y", d => -(nodeRadius(d) + 4));
 
   node.exit().transition().duration(400)
     .attr("transform", () => `translate(${source.y},${source.x})`)
@@ -436,6 +448,7 @@ function showTooltip(event, d) {
   let html = `<strong>${d.data.name}</strong>`;
   html += `<span class="metric">${urlCount} URL${urlCount===1?'':'s'}`;
   if (USE_CLICKS && clicks > 0) html += ` · ${fmtK(clicks)} clicks`;
+  if (d.data.new_count) html += ` · <span style="color:#27AE60;font-weight:700">${d.data.new_count} new</span>`;
   html += `</span>`;
   html += `<div class="hint">${hasChildren ? 'Click to ' + (d.children ? 'collapse' : 'expand') : 'Click to view page data'}</div>`;
   tooltip.innerHTML = html;
@@ -532,7 +545,8 @@ function renderTableBody() {
     const url = typeof item === 'string' ? item : item.url;
     const path = url.replace('https://oxylabs.io', '') || '/';
     const tr = document.createElement('tr');
-    let cells = `<td><a href="${url}" target="_blank" rel="noopener" class="url-link">${path}</a></td>`;
+    const newBadge = item.is_new ? '<span class="badge-new">new</span>' : '';
+    let cells = `<td><a href="${url}" target="_blank" rel="noopener" class="url-link">${path}</a>${newBadge}</td>`;
     if (USE_CLICKS) {
       const pos = item.position;
       const posLabel = (pos !== null && pos !== undefined) ? pos.toFixed(1) : '—';
