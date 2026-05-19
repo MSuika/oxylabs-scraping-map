@@ -96,7 +96,7 @@
 <div class="header">
   <h1>Oxylabs.io — Full Website Topic Map</h1>
   <div class="subtitle" id="subtitle"></div>
-  <div class="build">Last rebuilt: 2026-05-19 11:07 UTC (rebuilds daily via GitHub Actions)</div>
+  <div class="build">Last rebuilt: 2026-05-19 11:10 UTC (rebuilds daily via GitHub Actions)</div>
 </div>
 <div class="stats" id="stats"></div>
 <div class="controls">
@@ -200,8 +200,13 @@ function searchNav(dir) {
 
 function navigateToIdx(idx) {
   if (idx < _searchMatches.length) {
-    closePanel();
-    revealAndZoom(_searchMatches[idx]);
+    const d = _searchMatches[idx];
+    revealAndZoom(d);
+    if (d.data.urls) {
+      setTimeout(() => showUrls(d), 500);
+    } else {
+      closePanel();
+    }
   } else {
     const m = _urlMatches[idx - _searchMatches.length];
     const d = m.node;

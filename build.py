@@ -627,8 +627,13 @@ function searchNav(dir) {
 
 function navigateToIdx(idx) {
   if (idx < _searchMatches.length) {
-    closePanel();
-    revealAndZoom(_searchMatches[idx]);
+    const d = _searchMatches[idx];
+    revealAndZoom(d);
+    if (d.data.urls) {
+      setTimeout(() => showUrls(d), 500);
+    } else {
+      closePanel();
+    }
   } else {
     const m = _urlMatches[idx - _searchMatches.length];
     const d = m.node;
