@@ -403,6 +403,18 @@ HTML_TEMPLATE = r'''<!DOCTYPE html>
   .range-btn:hover { color: #e8edf5; background: rgba(255,255,255,0.06); }
   .range-btn.active { background: rgba(50,70,120,0.9); color: #fff; border: 1px solid rgba(100,150,255,0.35); }
   .range-btn.no-data { opacity: 0.45; }
+  .search-wrap { display: flex; align-items: center; gap: 3px; background: rgba(20,26,42,0.92); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; padding: 4px 8px; }
+  .search-input { background: none; border: none; color: #e8edf5; font-size: 12px; font-family: inherit; outline: none; width: 148px; }
+  .search-input::placeholder { color: #5a6378; }
+  .search-input:focus { width: 180px; transition: width 0.2s; }
+  .search-count { font-size: 11px; color: #8893a8; white-space: nowrap; min-width: 36px; text-align: center; }
+  .search-count.no-match { color: #c0392b; }
+  .search-nav { background: none; border: none; color: #8893a8; cursor: pointer; padding: 1px 4px; font-size: 13px; line-height: 1; border-radius: 3px; transition: color 0.15s; }
+  .search-nav:hover:not(:disabled) { color: #e8edf5; background: rgba(255,255,255,0.08); }
+  .search-nav:disabled { opacity: 0.2; cursor: default; }
+  .node.search-dim { opacity: 0.1; pointer-events: none; }
+  .node.search-match > circle { stroke: rgba(255,255,255,0.85) !important; stroke-width: 3px !important; }
+  .node.search-current > circle { stroke: #fff !important; stroke-width: 4px !important; filter: drop-shadow(0 0 8px rgba(255,255,255,0.7)); }
   #viz { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
   .link { fill: none; stroke-width: 1.5px; }
   .node circle { stroke-width: 2px; cursor: pointer; transition: r 0.15s, stroke 0.15s; }
@@ -425,6 +437,11 @@ HTML_TEMPLATE = r'''<!DOCTYPE html>
   .url-table { width: 100%; border-collapse: collapse; font-size: 11px; }
   .url-table th { text-align: left; color: #8893a8; font-weight: 500; padding: 6px 8px; border-bottom: 1px solid rgba(255,255,255,0.1); position: sticky; top: 0; background: rgba(20,26,42,0.98); white-space: nowrap; z-index: 1; }
   .url-table th.num { text-align: right; }
+  .url-table th.sortable { cursor: pointer; user-select: none; }
+  .url-table th.sortable:hover { color: #c8d2e6; background: rgba(255,255,255,0.05); }
+  .url-table th.sort-active { color: #7b9fd4; }
+  .sort-ind { margin-left: 3px; font-size: 9px; opacity: 0.3; }
+  .sort-active .sort-ind { opacity: 1; }
   .url-table td { padding: 5px 8px; border-bottom: 1px solid rgba(255,255,255,0.04); vertical-align: middle; }
   .url-table td.num { text-align: right; color: #b8c2d6; white-space: nowrap; font-variant-numeric: tabular-nums; }
   .url-table td.pos { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
@@ -449,6 +466,12 @@ HTML_TEMPLATE = r'''<!DOCTYPE html>
 </div>
 <div class="stats" id="stats"></div>
 <div class="controls">
+  <div class="search-wrap">
+    <input type="text" id="search-input" class="search-input" placeholder="Search nodes…" oninput="onSearch(this.value)" onkeydown="onSearchKey(event)" autocomplete="off" spellcheck="false">
+    <span id="search-count" class="search-count"></span>
+    <button class="search-nav" id="search-prev" onclick="searchNav(-1)" disabled title="Previous (Shift+Enter)">↑</button>
+    <button class="search-nav" id="search-next" onclick="searchNav(1)" disabled title="Next (Enter)">↓</button>
+  </div>
   <div class="range-picker" id="range-picker">
     <button class="range-btn" data-range="7d" onclick="switchRange('7d')">7d</button>
     <button class="range-btn" data-range="28d" onclick="switchRange('28d')">28d</button>
@@ -492,6 +515,78 @@ function fmtK(n) {
   return n.toLocaleString();
 }
 
+// ---------- Search ----------
+let _searchQuery = '';
+let _searchMatches = [];
+let _searchIdx = 0;
+
+function allNodes(node, result = []) {
+  result.push(node);
+  (node.children || node._children || []).forEach(c => allNodes(c, result));
+  return result;
+}
+
+function onSearch(q) {
+  _searchQuery = q.trim().toLowerCase();
+  _searchMatches = _searchQuery
+    ? allNodes(root).filter(d => d.depth > 0 && d.data.name.toLowerCase().includes(_searchQuery))
+    : [];
+  _searchIdx = 0;
+  updateSearchCount();
+  update(root);
+  if (_searchMatches.length > 0) revealAndZoom(_searchMatches[0]);
+}
+
+function onSearchKey(e) {
+  if (e.key === 'Enter') { e.preventDefault(); searchNav(e.shiftKey ? -1 : 1); }
+  if (e.key === 'Escape') { document.getElementById('search-input').value = ''; onSearch(''); }
+}
+
+function searchNav(dir) {
+  if (!_searchMatches.length) return;
+  _searchIdx = (_searchIdx + dir + _searchMatches.length) % _searchMatches.length;
+  updateSearchCount();
+  revealAndZoom(_searchMatches[_searchIdx]);
+}
+
+function updateSearchCount() {
+  const el = document.getElementById('search-count');
+  const prev = document.getElementById('search-prev');
+  const next = document.getElementById('search-next');
+  if (!_searchQuery) {
+    el.textContent = ''; el.className = 'search-count';
+    prev.disabled = next.disabled = true;
+  } else if (_searchMatches.length === 0) {
+    el.textContent = 'No match'; el.className = 'search-count no-match';
+    prev.disabled = next.disabled = true;
+  } else {
+    el.textContent = `${_searchIdx + 1} / ${_searchMatches.length}`; el.className = 'search-count';
+    prev.disabled = next.disabled = false;
+  }
+}
+
+function revealAndZoom(d) {
+  let node = d;
+  while (node.parent) {
+    if (node.parent._children) { node.parent.children = node.parent._children; node.parent._children = null; }
+    node = node.parent;
+  }
+  update(root);
+  setTimeout(() => {
+    const scale = 1.6;
+    const tx = -d.y * scale;
+    const ty = -d.x * scale;
+    svg.transition().duration(500).call(zoom.transform, d3.zoomIdentity.translate(tx, ty).scale(scale));
+  }, 420);
+}
+
+function clearSearch() {
+  document.getElementById('search-input').value = '';
+  _searchQuery = ''; _searchMatches = []; _searchIdx = 0;
+  updateSearchCount();
+}
+// ---------- End Search ----------
+
 function renderStats() {
   const ds = DATASETS[activeKey];
   USE_CLICKS = ds.total_clicks > 0;
@@ -525,7 +620,13 @@ function updateLegend() {
 }
 
 const width = window.innerWidth, height = window.innerHeight;
-const dx = 50, dy = 280;
+const dy = 300;
+
+function computeDx() {
+  let maxR = 12;
+  root.descendants().forEach(d => { const r = nodeRadius(d); if (r > maxR) maxR = r; });
+  return maxR * 2 + 20;
+}
 
 const svg = d3.select("#viz")
   .attr("width", width).attr("height", height)
@@ -567,6 +668,7 @@ function switchRange(key) {
     btn.classList.toggle('active', btn.dataset.range === key);
   });
   closePanel();
+  clearSearch();
   updateSubtitle();
   updateLegend();
   renderStats();
@@ -585,7 +687,7 @@ function nodeRadius(d) {
 }
 
 function update(source) {
-  d3.tree().nodeSize([dx, dy])(root);
+  d3.tree().nodeSize([computeDx(), dy])(root);
   const nodes = root.descendants(), links = root.links();
 
   const link = gLinks.selectAll("path.link")
@@ -649,6 +751,11 @@ function update(source) {
   nodeUpdate.select("circle")
     .attr("r", d => nodeRadius(d))
     .attr("fill-opacity", d => d._children ? 0.4 : 1);
+  const matchSet = new Set(_searchMatches);
+  nodeUpdate
+    .classed("search-match", d => matchSet.has(d))
+    .classed("search-current", d => d === _searchMatches[_searchIdx])
+    .classed("search-dim", d => _searchQuery.length > 0 && matchSet.size > 0 && !matchSet.has(d));
   nodeUpdate.select("text.inner")
     .text(d => {
       if (d.depth === 0 || !USE_CLICKS || !d.value) return '';
@@ -754,28 +861,45 @@ function exportXLSX() {
   XLSX.writeFile(wb, `oxylabs_${slugify(_exportTitle)}.xlsx`);
 }
 
-function showUrls(d) {
-  const urls = d.data.urls || [];
-  _exportTitle = d.data.name;
-  _exportRows = buildExportRows(urls);
-  document.getElementById('panel-title').textContent = d.data.name;
-  const totalClicks = urls.reduce((s, u) => s + (u.clicks || 0), 0);
-  const totalImpr = urls.reduce((s, u) => s + (u.impressions || 0), 0);
-  let meta = `${urls.length} URL${urls.length === 1 ? '' : 's'}`;
-  if (USE_CLICKS && totalClicks > 0) meta += ` · ${fmtK(totalClicks)} clicks · ${fmtK(totalImpr)} impressions`;
-  meta += ` · ${d.parent.data.name}`;
-  document.getElementById('panel-meta').textContent = meta;
+let _currentUrls = [];
+let _sortCol = null;
+let _sortDir = -1;
 
-  const urlsEl = document.getElementById('panel-urls');
-  urlsEl.innerHTML = '';
+function sortUrls(urls, col, dir) {
+  if (!col) return urls;
+  return [...urls].sort((a, b) => {
+    if (col === 'url') {
+      const av = (a.url || '').replace('https://oxylabs.io', '');
+      const bv = (b.url || '').replace('https://oxylabs.io', '');
+      return dir * av.localeCompare(bv);
+    }
+    const av = (a[col] == null) ? (col === 'position' ? 9999 : -1) : a[col];
+    const bv = (b[col] == null) ? (col === 'position' ? 9999 : -1) : b[col];
+    return dir * (av - bv);
+  });
+}
 
-  const table = document.createElement('table');
-  table.className = 'url-table';
-  const gscCols = USE_CLICKS ? '<th class="num">Clicks</th><th class="num">Impr.</th><th class="num">Avg Pos</th>' : '';
-  table.innerHTML = `<thead><tr><th>URL</th>${gscCols}</tr></thead>`;
-  const tbody = document.createElement('tbody');
+function buildTableHeader() {
+  function th(col, label, cls) {
+    const active = _sortCol === col;
+    const arrow = active ? (_sortDir === -1 ? ' ↓' : ' ↑') : ' ↕';
+    const activeCls = active ? ' sort-active' : '';
+    return `<th class="${cls}sortable${activeCls}" onclick="sortBy('${col}')">${label}<span class="sort-ind">${arrow}</span></th>`;
+  }
+  let html = th('url', 'URL', '');
+  if (USE_CLICKS) {
+    html += th('clicks', 'Clicks', 'num ');
+    html += th('impressions', 'Impr.', 'num ');
+    html += th('position', 'Avg Pos', 'num ');
+  }
+  return `<thead><tr>${html}</tr></thead>`;
+}
 
-  urls.forEach(item => {
+function renderTableBody() {
+  const tbody = document.querySelector('#panel-urls .url-table tbody');
+  if (!tbody) return;
+  tbody.innerHTML = '';
+  sortUrls(_currentUrls, _sortCol, _sortDir).forEach(item => {
     const url = typeof item === 'string' ? item : item.url;
     const path = url.replace('https://oxylabs.io', '') || '/';
     const tr = document.createElement('tr');
@@ -790,9 +914,42 @@ function showUrls(d) {
     tr.innerHTML = cells;
     tbody.appendChild(tr);
   });
+}
 
-  table.appendChild(tbody);
+function sortBy(col) {
+  _sortDir = (_sortCol === col) ? _sortDir * -1 : (col === 'url' ? 1 : -1);
+  _sortCol = col;
+  const table = document.querySelector('#panel-urls .url-table');
+  table.querySelector('thead').remove();
+  table.insertAdjacentHTML('afterbegin', buildTableHeader());
+  renderTableBody();
+  _exportRows = buildExportRows(sortUrls(_currentUrls, _sortCol, _sortDir));
+}
+
+function showUrls(d) {
+  _currentUrls = d.data.urls || [];
+  _sortCol = USE_CLICKS ? 'clicks' : 'url';
+  _sortDir = USE_CLICKS ? -1 : 1;
+  _exportTitle = d.data.name;
+  _exportRows = buildExportRows(_currentUrls);
+
+  document.getElementById('panel-title').textContent = d.data.name;
+  const totalClicks = _currentUrls.reduce((s, u) => s + (u.clicks || 0), 0);
+  const totalImpr = _currentUrls.reduce((s, u) => s + (u.impressions || 0), 0);
+  let meta = `${_currentUrls.length} URL${_currentUrls.length === 1 ? '' : 's'}`;
+  if (USE_CLICKS && totalClicks > 0) meta += ` · ${fmtK(totalClicks)} clicks · ${fmtK(totalImpr)} impressions`;
+  meta += ` · ${d.parent.data.name}`;
+  document.getElementById('panel-meta').textContent = meta;
+
+  const urlsEl = document.getElementById('panel-urls');
+  urlsEl.innerHTML = '';
+  const table = document.createElement('table');
+  table.className = 'url-table';
+  table.innerHTML = buildTableHeader();
+  table.appendChild(document.createElement('tbody'));
   urlsEl.appendChild(table);
+  renderTableBody();
+
   document.getElementById('panel').classList.add('open');
 }
 function closePanel() { document.getElementById('panel').classList.remove('open'); }

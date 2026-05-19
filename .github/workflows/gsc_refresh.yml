@@ -1,0 +1,49 @@
+name: Quarterly GSC refresh
+
+on:
+  schedule:
+    # 06:00 UTC on Jan 1, Apr 1, Jul 1, Oct 1
+    - cron: "0 6 1 1,4,7,10 *"
+  workflow_dispatch:  # allow manual trigger from GitHub UI
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install GSC dependencies
+        run: pip install google-auth-oauthlib google-api-python-client
+
+      - name: Restore GSC credentials
+        run: |
+          mkdir -p credentials
+          echo '${{ secrets.GSC_TOKEN_JSON }}' > credentials/token.json
+          echo '${{ secrets.GSC_CLIENT_SECRET_JSON }}' > credentials/client_secret.json
+
+      - name: Fetch fresh GSC snapshots (7d / 28d / 90d)
+        run: python gsc_fetch.py --force
+
+      - name: Rebuild topic map
+        run: python build.py
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add gsc_7d.json.gz gsc_28d.json.gz gsc_90d.json.gz gsc_data.json.gz index.html
+          if git diff --staged --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "Quarterly GSC refresh ($(date -u +'%Y-%m-%d'))"
+            git push
+          fi
