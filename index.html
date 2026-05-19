@@ -52,6 +52,7 @@
   .node text.inner { font-size: 9px; fill: #fff; stroke: none; paint-order: normal; font-weight: 700; letter-spacing: -0.03em; }
   .node.root > circle { fill: #fff; stroke: #fff; }
   .node.root > text { font-size: 14px; font-weight: 700; }
+  .node.root > text.inner { fill: #0a0e1a; font-size: 10px; }
   .node.group > text { font-size: 13px; font-weight: 600; }
   .panel { position: fixed; right: 16px; top: 110px; bottom: 16px; width: 460px; background: rgba(20,26,42,0.96); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.12); border-radius: 10px; padding: 18px; z-index: 90; display: none; flex-direction: column; }
   .panel.open { display: flex; }
@@ -93,7 +94,7 @@
 <div class="header">
   <h1>Oxylabs.io — Full Website Topic Map</h1>
   <div class="subtitle" id="subtitle"></div>
-  <div class="build">Last rebuilt: 2026-05-19 10:42 UTC (rebuilds daily via GitHub Actions)</div>
+  <div class="build">Last rebuilt: 2026-05-19 10:50 UTC (rebuilds daily via GitHub Actions)</div>
 </div>
 <div class="stats" id="stats"></div>
 <div class="controls">
@@ -307,13 +308,14 @@ function switchRange(key) {
 }
 
 function nodeRadius(d) {
-  if (d.depth === 0) return 12;
+  if (d.depth === 0) {
+    if (!USE_CLICKS || !d.value) return 22;
+    return Math.max(22, Math.min(52, Math.log10(d.value + 1) * 10));
+  }
   const v = d.value || 0;
   if (!USE_CLICKS || v === 0) {
-    // URL-count mode: use d.value (aggregated count) for all node levels
     return Math.max(5, Math.min(32, Math.sqrt(v || 1) * 1.4));
   }
-  // Clicks mode: log scale mapped to [4, 42] — avoids clamping the typical 100–150k range
   return Math.max(4, Math.min(42, Math.log10(v + 1) * 8));
 }
 
@@ -396,7 +398,7 @@ function update(source) {
     .classed("search-dim", d => _searchQuery.length > 0 && matchSet.size > 0 && !matchSet.has(d));
   nodeUpdate.select("text.inner")
     .text(d => {
-      if (d.depth === 0 || !USE_CLICKS || !d.value) return '';
+      if (!USE_CLICKS || !d.value) return '';
       return nodeRadius(d) >= 12 ? fmtK(d.value) : '';
     });
   nodeUpdate.select("text.outer")
@@ -549,10 +551,10 @@ function renderTableBody() {
     let cells = `<td><a href="${url}" target="_blank" rel="noopener" class="url-link">${path}</a>${newBadge}</td>`;
     if (USE_CLICKS) {
       const pos = item.position;
-      const posLabel = (pos !== null && pos !== undefined) ? pos.toFixed(1) : '—';
-      cells += `<td class="num">${(item.clicks || 0).toLocaleString()}</td>`;
-      cells += `<td class="num">${(item.impressions || 0).toLocaleString()}</td>`;
-      cells += `<td class="pos ${posClass(pos)}">${posLabel}</td>`;
+      const noData = item.is_new && !item.clicks && !item.impressions;
+      cells += `<td class="num">${noData ? '—' : (item.clicks || 0).toLocaleString()}</td>`;
+      cells += `<td class="num">${noData ? '—' : (item.impressions || 0).toLocaleString()}</td>`;
+      cells += `<td class="pos ${noData ? 'pos-low' : posClass(pos)}">${noData ? '—' : (pos !== null && pos !== undefined) ? pos.toFixed(1) : '—'}</td>`;
     }
     tr.innerHTML = cells;
     tbody.appendChild(tr);
