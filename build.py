@@ -676,16 +676,16 @@ function updateSubtitle() {
 function updateLegend() {
   const ds = DATASETS[activeKey];
   const sizeHint = ds.total_clicks > 0
-    ? `Bubble size = <b>clicks</b> (${ds.label}). Number inside = total.`
-    : `Bubble size = <b>URL count</b> (no GSC data for this range).`;
+    ? `Bubble size reflects <b>organic clicks</b> (${ds.label}) &mdash; larger means more traffic. The number inside shows the click total for that topic.`
+    : `Bubble size reflects <b>page count</b> for this range &mdash; no traffic data available yet.`;
   document.getElementById('legend-hint').innerHTML = `
-    <div class="legend-row"><span class="legend-key">Structure</span>oxylabs.io &rarr; color groups &rarr; clusters &rarr; sub-clusters &rarr; pages</div>
-    <div class="legend-row"><span class="legend-key">Bubbles</span>${sizeHint} Root bubble = site total.</div>
-    <div class="legend-row"><span class="legend-key" style="color:#27AE60">NEW</span>Page added to sitemap in last 7 days. GSC data shows &mdash; until indexed.</div>
-    <div class="legend-row"><span class="legend-key">Range</span>7d / 28d / 90d toggle changes the GSC data window.</div>
-    <div class="legend-row"><span class="legend-key">Navigate</span>Click node to expand/collapse &middot; click leaf to view page data &middot; drag to pan &middot; scroll to zoom.</div>
-    <div class="legend-row"><span class="legend-key">Search</span>Type to highlight matching nodes &middot; Enter / Shift+Enter to cycle &middot; Esc to clear.</div>
-    <div class="legend-row"><span class="legend-key">Export</span>CSV or XLSX available in any open URL panel.</div>
+    <div class="legend-row"><span class="legend-key">What you&rsquo;re seeing</span>Every page on oxylabs.io, grouped by topic. The centre bubble is the whole site; each branch is a content area, breaking down into topics and individual pages.</div>
+    <div class="legend-row"><span class="legend-key">Bubble size</span>${sizeHint}</div>
+    <div class="legend-row"><span class="legend-key" style="color:#27AE60">NEW label</span>This page was added to the site in the last 7 days. Traffic figures may show &mdash; while Google is still indexing it.</div>
+    <div class="legend-row"><span class="legend-key">Date range</span>Use <b>7d / 28d / 90d</b> to change the traffic window. Bubble sizes and click counts update accordingly.</div>
+    <div class="legend-row"><span class="legend-key">Exploring</span>Click any bubble to expand or collapse that branch. Click a topic&rsquo;s end bubble to open the full list of pages with traffic data.</div>
+    <div class="legend-row"><span class="legend-key">Search</span>Type in the search box to highlight matching topics across the whole map. Press Enter to jump between results, Esc to clear.</div>
+    <div class="legend-row"><span class="legend-key">Export</span>Open any page list and use the CSV or XLSX buttons to download the data.</div>
   `;
 }
 
