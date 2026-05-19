@@ -578,7 +578,8 @@ function fmtK(n) {
 
 // ---------- Search ----------
 let _searchQuery = '';
-let _searchMatches = [];
+let _searchMatches = [];  // D3 nodes whose name matches (bubble highlights)
+let _urlMatches = [];     // {node, urls} — leaf nodes with matching URLs
 let _searchIdx = 0;
 
 function allNodes(node, result = []) {
@@ -587,15 +588,29 @@ function allNodes(node, result = []) {
   return result;
 }
 
+function totalResults() { return _searchMatches.length + _urlMatches.length; }
+
 function onSearch(q) {
   _searchQuery = q.trim().toLowerCase();
-  _searchMatches = _searchQuery
-    ? allNodes(root).filter(d => d.depth > 0 && d.data.name.toLowerCase().includes(_searchQuery))
-    : [];
+  if (_searchQuery) {
+    const nameMatches = allNodes(root).filter(d => d.depth > 0 && d.data.name.toLowerCase().includes(_searchQuery));
+    const nameMatchSet = new Set(nameMatches);
+    _searchMatches = nameMatches;
+    _urlMatches = [];
+    allNodes(root).forEach(d => {
+      if (d.data.urls && !nameMatchSet.has(d)) {
+        const hits = d.data.urls.filter(u => u.url && u.url.toLowerCase().includes(_searchQuery));
+        if (hits.length) _urlMatches.push({node: d, urls: hits});
+      }
+    });
+  } else {
+    _searchMatches = [];
+    _urlMatches = [];
+  }
   _searchIdx = 0;
   updateSearchCount();
   update(root);
-  if (_searchMatches.length > 0) revealAndZoom(_searchMatches[0]);
+  if (totalResults() > 0) navigateToIdx(0);
 }
 
 function onSearchKey(e) {
@@ -604,24 +619,38 @@ function onSearchKey(e) {
 }
 
 function searchNav(dir) {
-  if (!_searchMatches.length) return;
-  _searchIdx = (_searchIdx + dir + _searchMatches.length) % _searchMatches.length;
+  if (!totalResults()) return;
+  _searchIdx = (_searchIdx + dir + totalResults()) % totalResults();
   updateSearchCount();
-  revealAndZoom(_searchMatches[_searchIdx]);
+  navigateToIdx(_searchIdx);
+}
+
+function navigateToIdx(idx) {
+  if (idx < _searchMatches.length) {
+    closePanel();
+    revealAndZoom(_searchMatches[idx]);
+  } else {
+    const m = _urlMatches[idx - _searchMatches.length];
+    revealAndZoom(m.node);
+    setTimeout(() => showFilteredUrls(m.node, m.urls), 500);
+  }
 }
 
 function updateSearchCount() {
   const el = document.getElementById('search-count');
   const prev = document.getElementById('search-prev');
   const next = document.getElementById('search-next');
+  const total = totalResults();
   if (!_searchQuery) {
     el.textContent = ''; el.className = 'search-count';
     prev.disabled = next.disabled = true;
-  } else if (_searchMatches.length === 0) {
+  } else if (total === 0) {
     el.textContent = 'No match'; el.className = 'search-count no-match';
     prev.disabled = next.disabled = true;
   } else {
-    el.textContent = `${_searchIdx + 1} / ${_searchMatches.length}`; el.className = 'search-count';
+    const inUrls = _searchIdx >= _searchMatches.length;
+    el.textContent = `${_searchIdx + 1} / ${total}${inUrls ? ' (URLs)' : ''}`;
+    el.className = 'search-count';
     prev.disabled = next.disabled = false;
   }
 }
@@ -643,7 +672,7 @@ function revealAndZoom(d) {
 
 function clearSearch() {
   document.getElementById('search-input').value = '';
-  _searchQuery = ''; _searchMatches = []; _searchIdx = 0;
+  _searchQuery = ''; _searchMatches = []; _urlMatches = []; _searchIdx = 0;
   updateSearchCount();
 }
 // ---------- End Search ----------
@@ -1034,6 +1063,19 @@ function showUrls(d) {
   renderTableBody();
 
   document.getElementById('panel').classList.add('open');
+}
+function showFilteredUrls(d, filteredUrls) {
+  showUrls(d);
+  _currentUrls = filteredUrls;
+  const totalClicks = _currentUrls.reduce((s, u) => s + (u.clicks || 0), 0);
+  const totalImpr = _currentUrls.reduce((s, u) => s + (u.impressions || 0), 0);
+  const all = (d.data.urls || []).length;
+  let meta = `${_currentUrls.length} of ${all} URL${all === 1 ? '' : 's'} match "${_searchQuery}"`;
+  if (USE_CLICKS && totalClicks > 0) meta += ` · ${fmtK(totalClicks)} clicks · ${fmtK(totalImpr)} impressions`;
+  meta += ` · ${d.parent ? d.parent.data.name : ''}`;
+  document.getElementById('panel-meta').textContent = meta;
+  _exportRows = buildExportRows(_currentUrls);
+  renderTableBody();
 }
 function closePanel() { document.getElementById('panel').classList.remove('open'); }
 
