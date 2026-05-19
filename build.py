@@ -24,28 +24,35 @@ from urllib.error import URLError, HTTPError
 SITEMAP_URL = "https://oxylabs.io/f3h5j7k9m2n4p6q8r0.xml"
 USER_AGENT = "OxylabsTopicMap/1.0 (+github.com/MSuika/oxylabs-scraping-map)"
 
+RANGE_KEYS = ["7d", "28d", "90d"]
+RANGE_LABELS = {"7d": "last 7 days", "28d": "last 28 days", "90d": "last 90 days"}
+
 
 # ---------- 0. GSC Cache ----------
 
-def load_gsc_metrics() -> dict:
-    """Load page-level GSC metrics. Prefers gsc_data.json.gz (committed snapshot for CI),
-    falls back to latest cache/gsc_*/page_date.json.gz."""
+def load_gsc_metrics(range_key: str = "90d") -> dict:
+    """Load page-level GSC metrics for a given date range.
+    Looks for gsc_{range_key}.json.gz; for 90d also falls back to gsc_data.json.gz
+    and finally to the latest cache/gsc_*/page_date.json.gz."""
     root = Path(__file__).parent
-    committed = root / "gsc_data.json.gz"
-    if committed.exists():
-        path = committed
-    else:
-        dirs = sorted((root / "cache").glob("gsc_*"), reverse=True)
-        if not dirs:
+    path = root / f"gsc_{range_key}.json.gz"
+    if not path.exists():
+        if range_key == "90d":
+            path = root / "gsc_data.json.gz"
+            if not path.exists():
+                dirs = sorted((root / "cache").glob("gsc_*"), reverse=True)
+                if not dirs:
+                    return {}
+                path = dirs[0] / "page_date.json.gz"
+        else:
             return {}
-        path = dirs[0] / "page_date.json.gz"
     if not path.exists():
         return {}
     try:
         with gzip.open(path, "rt", encoding="utf-8") as f:
             rows = json.load(f)
     except Exception as e:
-        print(f"Warning: could not load GSC cache: {e}", file=sys.stderr)
+        print(f"Warning: could not load GSC cache ({range_key}): {e}", file=sys.stderr)
         return {}
     metrics: dict = {}
     for row in rows:
@@ -325,15 +332,40 @@ def build_tree(urls, gsc=None):
     return tree
 
 
-def generate_html(tree, total, total_clicks, group_summary, build_date):
-    clicks_label = f"{fmt_k(total_clicks)} clicks · last 90 days" if total_clicks > 0 else "no GSC data"
-    tree_json = json.dumps(tree, separators=(',', ':'))
+def compute_stats(tree):
+    """Return (total_urls, total_clicks, group_summary) from a built tree."""
+    total = 0
+    total_clicks = 0
+    for g in tree["children"]:
+        g_total = sum(ch["count"] for ch in g["children"])
+        g_clicks = sum(
+            (sum(c.get("clicks", 0) for c in cl.get("children", [])) or cl.get("clicks", 0))
+            for cl in g["children"]
+        )
+        total += g_total
+        total_clicks += g_clicks
+    group_summary = []
+    for g in tree["children"]:
+        g_total = sum(ch["count"] for ch in g["children"])
+        g_clicks = sum(
+            (sum(c.get("clicks", 0) for c in cl.get("children", [])) or cl.get("clicks", 0))
+            for cl in g["children"]
+        )
+        group_summary.append({
+            "name": g["name"],
+            "count": g_total,
+            "clicks": g_clicks,
+            "color": g["color"],
+            "share": round(g_total / total * 100, 1) if total else 0,
+            "clicks_share": round(g_clicks / total_clicks * 100, 1) if total_clicks else 0,
+        })
+    return total, total_clicks, group_summary
+
+
+def generate_html(datasets, total, build_date):
     return (HTML_TEMPLATE
-            .replace("__TREE_JSON__", tree_json)
-            .replace("__GROUP_SUMMARY__", json.dumps(group_summary))
+            .replace("__DATASETS_JSON__", json.dumps(datasets, separators=(',', ':')))
             .replace("__TOTAL__", str(total))
-            .replace("__TOTAL_CLICKS__", str(total_clicks))
-            .replace("__CLICKS_LABEL__", clicks_label)
             .replace("__BUILD_DATE__", build_date))
 
 
@@ -363,9 +395,14 @@ HTML_TEMPLATE = r'''<!DOCTYPE html>
   .stat-card .share { font-size: 10px; color: #8893a8; }
   .legend { position: fixed; bottom: 16px; left: 16px; background: rgba(20,26,42,0.92); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 10px 14px; font-size: 11px; color: #b8c2d6; max-width: 280px; z-index: 50; line-height: 1.5; }
   .legend strong { color: #e8edf5; font-size: 12px; display: block; margin-bottom: 4px; }
-  .controls { position: fixed; top: 80px; right: 16px; display: flex; gap: 6px; z-index: 50; }
+  .controls { position: fixed; top: 80px; right: 16px; display: flex; gap: 6px; z-index: 50; align-items: center; }
   .btn { background: rgba(20,26,42,0.92); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.1); color: #e8edf5; padding: 7px 12px; border-radius: 6px; font-size: 12px; cursor: pointer; font-family: inherit; transition: all 0.15s; }
   .btn:hover { background: rgba(40,50,75,0.95); border-color: rgba(255,255,255,0.2); }
+  .range-picker { display: flex; gap: 2px; background: rgba(10,14,26,0.7); border: 1px solid rgba(255,255,255,0.1); border-radius: 7px; padding: 3px; }
+  .range-btn { background: transparent; border: none; color: #8893a8; padding: 4px 10px; border-radius: 5px; font-size: 11px; font-weight: 600; cursor: pointer; font-family: inherit; transition: all 0.15s; letter-spacing: 0.02em; }
+  .range-btn:hover { color: #e8edf5; background: rgba(255,255,255,0.06); }
+  .range-btn.active { background: rgba(50,70,120,0.9); color: #fff; border: 1px solid rgba(100,150,255,0.35); }
+  .range-btn.no-data { opacity: 0.45; }
   #viz { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
   .link { fill: none; stroke-width: 1.5px; }
   .node circle { stroke-width: 2px; cursor: pointer; transition: r 0.15s, stroke 0.15s; }
@@ -407,18 +444,23 @@ HTML_TEMPLATE = r'''<!DOCTYPE html>
 <body>
 <div class="header">
   <h1>Oxylabs.io — Full Website Topic Map</h1>
-  <div class="subtitle">__TOTAL__ URLs · __CLICKS_LABEL__. Click nodes to expand. Drag to pan, scroll to zoom.</div>
+  <div class="subtitle" id="subtitle"></div>
   <div class="build">Last rebuilt: __BUILD_DATE__ (rebuilds daily via GitHub Actions)</div>
 </div>
 <div class="stats" id="stats"></div>
 <div class="controls">
+  <div class="range-picker" id="range-picker">
+    <button class="range-btn" data-range="7d" onclick="switchRange('7d')">7d</button>
+    <button class="range-btn" data-range="28d" onclick="switchRange('28d')">28d</button>
+    <button class="range-btn" data-range="90d" onclick="switchRange('90d')">90d</button>
+  </div>
   <button class="btn" onclick="expandAll()">Expand all</button>
   <button class="btn" onclick="collapseAll()">Collapse</button>
   <button class="btn" onclick="resetView()">Reset</button>
 </div>
 <div class="legend">
   <strong>How to read this</strong>
-  Bubble size = clicks (last 90 days). Number inside bubble = total clicks. Click any node to expand, or leaf nodes to see page-level data.
+  <span id="legend-hint"></span>
 </div>
 <svg id="viz"></svg>
 <div class="panel" id="panel">
@@ -436,11 +478,12 @@ HTML_TEMPLATE = r'''<!DOCTYPE html>
 let _exportRows = [];
 let _exportTitle = '';
 
-const TREE_DATA = __TREE_JSON__;
-const GROUP_SUMMARY = __GROUP_SUMMARY__;
+const DATASETS = __DATASETS_JSON__;
 const TOTAL = __TOTAL__;
-const TOTAL_CLICKS = __TOTAL_CLICKS__;
-const USE_CLICKS = TOTAL_CLICKS > 0;
+const RANGE_KEYS = ['7d', '28d', '90d'];
+let activeKey = RANGE_KEYS.find(k => DATASETS[k].total_clicks > 0) || '90d';
+let USE_CLICKS = false;
+let root;
 
 function fmtK(n) {
   if (!n) return '0';
@@ -449,19 +492,37 @@ function fmtK(n) {
   return n.toLocaleString();
 }
 
-const statsEl = document.getElementById('stats');
-const totalCard = document.createElement('div');
-totalCard.className = 'stat-card';
-totalCard.innerHTML = `<div class="name">Total indexed</div><div class="count">${TOTAL.toLocaleString()} <span class="clicks-sub">URLs</span></div><div class="share">${USE_CLICKS ? fmtK(TOTAL_CLICKS) + ' clicks · last 90 days' : 'No GSC data cached'}</div>`;
-statsEl.appendChild(totalCard);
-GROUP_SUMMARY.forEach(g => {
-  const el = document.createElement('div');
-  el.className = 'stat-card';
-  const clicksBadge = (USE_CLICKS && g.clicks > 0) ? ` <span class="clicks-sub">· ${fmtK(g.clicks)} clicks</span>` : '';
-  const clicksShare = (USE_CLICKS && g.clicks_share > 0) ? ` · ${g.clicks_share}% of clicks` : '';
-  el.innerHTML = `<div class="name"><span class="dot" style="background:${g.color}"></span>${g.name}</div><div class="count">${g.count.toLocaleString()}${clicksBadge}</div><div class="share">${g.share}% of URLs${clicksShare}</div>`;
-  statsEl.appendChild(el);
-});
+function renderStats() {
+  const ds = DATASETS[activeKey];
+  USE_CLICKS = ds.total_clicks > 0;
+  const statsEl = document.getElementById('stats');
+  statsEl.innerHTML = '';
+  const totalCard = document.createElement('div');
+  totalCard.className = 'stat-card';
+  totalCard.innerHTML = `<div class="name">Total indexed</div><div class="count">${TOTAL.toLocaleString()} <span class="clicks-sub">URLs</span></div><div class="share">${USE_CLICKS ? fmtK(ds.total_clicks) + ' clicks · ' + ds.label : 'No GSC data for this range'}</div>`;
+  statsEl.appendChild(totalCard);
+  ds.group_summary.forEach(g => {
+    const el = document.createElement('div');
+    el.className = 'stat-card';
+    const clicksBadge = (USE_CLICKS && g.clicks > 0) ? ` <span class="clicks-sub">· ${fmtK(g.clicks)} clicks</span>` : '';
+    const clicksShare = (USE_CLICKS && g.clicks_share > 0) ? ` · ${g.clicks_share}% of clicks` : '';
+    el.innerHTML = `<div class="name"><span class="dot" style="background:${g.color}"></span>${g.name}</div><div class="count">${g.count.toLocaleString()}${clicksBadge}</div><div class="share">${g.share}% of URLs${clicksShare}</div>`;
+    statsEl.appendChild(el);
+  });
+}
+
+function updateSubtitle() {
+  const ds = DATASETS[activeKey];
+  const clicksLabel = ds.total_clicks > 0 ? fmtK(ds.total_clicks) + ' clicks · ' + ds.label : 'no GSC data';
+  document.getElementById('subtitle').textContent = `${TOTAL} URLs · ${clicksLabel}. Click nodes to expand. Drag to pan, scroll to zoom.`;
+}
+
+function updateLegend() {
+  const ds = DATASETS[activeKey];
+  document.getElementById('legend-hint').textContent = ds.total_clicks > 0
+    ? `Bubble size = clicks (${ds.label}). Number inside bubble = total clicks. Click any node to expand, or leaf nodes to see page-level data.`
+    : 'Bubble size = URL count. Click any node to expand, or leaf nodes to see page-level data.';
+}
 
 const width = window.innerWidth, height = window.innerHeight;
 const dx = 50, dy = 280;
@@ -479,25 +540,48 @@ const zoom = d3.zoom().scaleExtent([0.2, 3])
   .on("zoom", (event) => gZoom.attr("transform", event.transform));
 svg.call(zoom);
 
-const root = d3.hierarchy(TREE_DATA);
-root.x0 = 0; root.y0 = 0;
-root.children.forEach(groupNode => {
-  const color = groupNode.data.color;
-  groupNode.each(n => n.groupColor = color);
-});
-root.sum(d => USE_CLICKS ? (d.clicks || 0) : (d.count || 0));
-root.descendants().forEach(d => {
-  if (d.depth >= 1 && d.children) { d._children = d.children; d.children = null; }
-});
+function initTree() {
+  const ds = DATASETS[activeKey];
+  USE_CLICKS = ds.total_clicks > 0;
+  gLinks.selectAll('*').remove();
+  gNodes.selectAll('*').remove();
+  root = d3.hierarchy(ds.tree);
+  root.x0 = 0; root.y0 = 0;
+  root.children.forEach(groupNode => {
+    const color = groupNode.data.color;
+    groupNode.each(n => n.groupColor = color);
+  });
+  root.sum(d => USE_CLICKS ? (d.clicks || 0) : (d.count || 0));
+  root.descendants().forEach(d => {
+    if (d.depth >= 1 && d.children) { d._children = d.children; d.children = null; }
+  });
+  if (root._children) { root.children = root._children; root._children = null; }
+  update(root);
+  setTimeout(fitToView, 100);
+}
+
+function switchRange(key) {
+  if (key === activeKey) return;
+  activeKey = key;
+  document.querySelectorAll('.range-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.range === key);
+  });
+  closePanel();
+  updateSubtitle();
+  updateLegend();
+  renderStats();
+  initTree();
+}
 
 function nodeRadius(d) {
   if (d.depth === 0) return 12;
   const v = d.value || 0;
   if (!USE_CLICKS || v === 0) {
-    const c = d.data.count || (d.data.urls ? d.data.urls.length : 1);
-    return Math.max(5, Math.min(22, Math.sqrt(c) * 0.9));
+    // URL-count mode: use d.value (aggregated count) for all node levels
+    return Math.max(5, Math.min(32, Math.sqrt(v || 1) * 1.4));
   }
-  return Math.max(8, Math.min(22, Math.log10(v + 1) * 10));
+  // Clicks mode: log scale mapped to [4, 42] — avoids clamping the typical 100–150k range
+  return Math.max(4, Math.min(42, Math.log10(v + 1) * 8));
 }
 
 function update(source) {
@@ -563,6 +647,7 @@ function update(source) {
     .attr("transform", d => `translate(${d.y},${d.x})`)
     .attr("opacity", 1);
   nodeUpdate.select("circle")
+    .attr("r", d => nodeRadius(d))
     .attr("fill-opacity", d => d._children ? 0.4 : 1);
   nodeUpdate.select("text.inner")
     .text(d => {
@@ -712,9 +797,21 @@ function showUrls(d) {
 }
 function closePanel() { document.getElementById('panel').classList.remove('open'); }
 
-if (root._children) { root.children = root._children; root._children = null; }
-update(root);
-setTimeout(fitToView, 100);
+// Mark range buttons with no data
+RANGE_KEYS.forEach(k => {
+  const btn = document.querySelector(`.range-btn[data-range="${k}"]`);
+  if (btn && DATASETS[k].total_clicks === 0) btn.classList.add('no-data');
+});
+
+// Set initial active button
+document.querySelectorAll('.range-btn').forEach(btn => {
+  btn.classList.toggle('active', btn.dataset.range === activeKey);
+});
+
+updateSubtitle();
+updateLegend();
+renderStats();
+initTree();
 
 window.addEventListener('resize', () => {
   const w = window.innerWidth, h = window.innerHeight;
@@ -727,13 +824,6 @@ window.addEventListener('resize', () => {
 
 
 def main():
-    print("Loading GSC cache...")
-    gsc = load_gsc_metrics()
-    if gsc:
-        print(f"GSC data loaded: {len(gsc):,} URLs with metrics.")
-    else:
-        print("No GSC cache found — bubble sizes will reflect URL counts.")
-
     print(f"Fetching sitemap from {SITEMAP_URL}...")
     xml = fetch_sitemap(SITEMAP_URL)
     urls = sorted(set(re.findall(r'<loc>(.*?)</loc>', xml)))
@@ -743,45 +833,37 @@ def main():
     urls = [u for u in urls if not is_excluded(u)]
     print(f"After excluding noise (legal, pagination, press): {len(urls)}")
 
-    tree = build_tree(urls, gsc=gsc)
-
-    group_summary = []
-    total = 0
-    total_clicks = 0
-    for g in tree["children"]:
-        g_total = sum(ch["count"] for ch in g["children"])
-        g_clicks = sum(
-            (sum(c.get("clicks", 0) for c in cl.get("children", [])) or cl.get("clicks", 0))
-            for cl in g["children"]
-        )
-        total += g_total
-        total_clicks += g_clicks
-    for g in tree["children"]:
-        g_total = sum(ch["count"] for ch in g["children"])
-        g_clicks = sum(
-            (sum(c.get("clicks", 0) for c in cl.get("children", [])) or cl.get("clicks", 0))
-            for cl in g["children"]
-        )
-        group_summary.append({
-            "name": g["name"],
-            "count": g_total,
-            "clicks": g_clicks,
-            "color": g["color"],
-            "share": round(g_total / total * 100, 1) if total else 0,
-            "clicks_share": round(g_clicks / total_clicks * 100, 1) if total_clicks else 0,
-        })
+    datasets = {}
+    total = None
+    for key in RANGE_KEYS:
+        print(f"Loading GSC cache ({key})...")
+        gsc = load_gsc_metrics(key)
+        if gsc:
+            print(f"  {len(gsc):,} URLs with metrics.")
+        else:
+            print(f"  No data — bubbles will reflect URL counts for this range.")
+        tree = build_tree(urls, gsc=gsc)
+        t, total_clicks, group_summary = compute_stats(tree)
+        if total is None:
+            total = t
+        datasets[key] = {
+            "tree": tree,
+            "total_clicks": total_clicks,
+            "group_summary": group_summary,
+            "label": RANGE_LABELS[key],
+        }
+        print(f"  total_clicks={total_clicks:,}")
 
     build_date = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
-    html = generate_html(tree, total, total_clicks, group_summary, build_date)
+    html = generate_html(datasets, total, build_date)
 
     with open("index.html", "w", encoding="utf-8") as f:
         f.write(html)
 
     print(f"OK. Wrote index.html ({len(html):,} bytes).")
     print(f"Total URLs indexed: {total}")
-    print(f"Total clicks (90d): {total_clicks:,}")
-    for g in group_summary:
-        print(f"  {g['name']}: {g['count']} URLs, {g['clicks']:,} clicks ({g['clicks_share']}%)")
+    for key, ds in datasets.items():
+        print(f"  {key}: {ds['total_clicks']:,} clicks")
 
 
 if __name__ == "__main__":
