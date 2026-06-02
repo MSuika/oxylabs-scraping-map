@@ -511,6 +511,9 @@ HTML_TEMPLATE = r'''<!DOCTYPE html>
   .pos-mid { color: #F39C12; }
   .pos-low { color: #8893a8; }
   .badge-new { display: inline-block; background: #27AE60; color: #fff; font-size: 9px; font-weight: 700; padding: 1px 5px; border-radius: 3px; margin-left: 5px; letter-spacing: 0.04em; vertical-align: middle; text-transform: uppercase; line-height: 1.6; }
+  .btn-new { color: #27AE60; border-color: rgba(39,174,96,0.35); }
+  .btn-new:hover { background: rgba(39,174,96,0.12); border-color: rgba(39,174,96,0.65); color: #2ecc71; }
+  .btn-new.has-new { border-color: rgba(39,174,96,0.6); }
   .node text.new-label { font-size: 8px; fill: #27AE60; stroke: none; paint-order: normal; font-weight: 800; letter-spacing: 0.06em; }
   .tooltip { position: fixed; background: rgba(15,20,35,0.98); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.15); padding: 8px 12px; border-radius: 6px; font-size: 11px; pointer-events: none; opacity: 0; transition: opacity 0.15s; z-index: 200; max-width: 240px; }
   .tooltip.visible { opacity: 1; }
@@ -538,6 +541,7 @@ HTML_TEMPLATE = r'''<!DOCTYPE html>
     <button class="range-btn" data-range="28d" onclick="switchRange('28d')">28d</button>
     <button class="range-btn" data-range="90d" onclick="switchRange('90d')">90d</button>
   </div>
+  <button class="btn btn-new" id="new-pages-btn" onclick="showNewPages()">New pages <span id="new-pages-count"></span></button>
   <button class="btn" onclick="expandAll()">Expand all</button>
   <button class="btn" onclick="collapseAll()">Collapse</button>
   <button class="btn" onclick="resetView()">Reset</button>
@@ -787,6 +791,7 @@ function switchRange(key) {
   updateSubtitle();
   updateLegend();
   renderStats();
+  updateNewPagesBtn();
   initTree();
 }
 
@@ -1100,6 +1105,119 @@ function showFilteredUrls(d, filteredUrls) {
 }
 function closePanel() { document.getElementById('panel').classList.remove('open'); }
 
+// ---------- New Pages Tab ----------
+let _newPagesSortCol = 'clicks';
+let _newPagesSortDir = -1;
+
+function updateNewPagesBtn() {
+  const pages = DATASETS[activeKey].new_pages || [];
+  const btn = document.getElementById('new-pages-btn');
+  const countEl = document.getElementById('new-pages-count');
+  if (pages.length > 0) {
+    countEl.textContent = `(${pages.length})`;
+    btn.classList.add('has-new');
+  } else {
+    countEl.textContent = '';
+    btn.classList.remove('has-new');
+  }
+}
+
+function buildNewPagesHeader() {
+  function th(col, label, cls) {
+    const active = _newPagesSortCol === col;
+    const arrow = active ? (_newPagesSortDir === -1 ? ' ↓' : ' ↑') : ' ↕';
+    const activeCls = active ? ' sort-active' : '';
+    return `<th class="${cls}sortable${activeCls}" onclick="sortNewPagesBy('${col}')">${label}<span class="sort-ind">${arrow}</span></th>`;
+  }
+  let html = th('url', 'URL', '');
+  html += th('topic', 'Topic', '');
+  html += th('first_seen', 'First seen', 'num ');
+  if (USE_CLICKS) {
+    html += th('clicks', 'Clicks', 'num ');
+    html += th('position', 'Avg Pos', 'num ');
+  }
+  return `<thead><tr>${html}</tr></thead>`;
+}
+
+function renderNewPagesBody() {
+  const tbody = document.querySelector('#panel-urls .url-table tbody');
+  if (!tbody) return;
+  const pages = DATASETS[activeKey].new_pages || [];
+  const col = _newPagesSortCol;
+  const dir = _newPagesSortDir;
+  const sorted = [...pages].sort((a, b) => {
+    if (col === 'url') return dir * (a.url || '').replace('https://oxylabs.io','').localeCompare((b.url || '').replace('https://oxylabs.io',''));
+    if (col === 'topic') return dir * (a.topic || '').localeCompare(b.topic || '');
+    if (col === 'first_seen') return dir * (a.first_seen || '').localeCompare(b.first_seen || '');
+    const av = (a[col] == null) ? (col === 'position' ? 9999 : -1) : a[col];
+    const bv = (b[col] == null) ? (col === 'position' ? 9999 : -1) : b[col];
+    return dir * (av - bv);
+  });
+  tbody.innerHTML = '';
+  sorted.forEach(item => {
+    const path = item.url.replace('https://oxylabs.io', '') || '/';
+    const tr = document.createElement('tr');
+    let cells = `<td><a href="${item.url}" target="_blank" rel="noopener" class="url-link">${path}</a></td>`;
+    cells += `<td style="color:#b8c2d6;font-size:10px;max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${item.topic || ''}">${item.topic || '—'}</td>`;
+    cells += `<td class="num" style="font-size:10px;white-space:nowrap;">${item.first_seen || '—'}</td>`;
+    if (USE_CLICKS) {
+      const pos = item.position;
+      const noData = !item.clicks && !item.impressions;
+      cells += `<td class="num">${noData ? '—' : (item.clicks || 0).toLocaleString()}</td>`;
+      cells += `<td class="pos ${noData ? 'pos-low' : posClass(pos)}">${noData ? '—' : (pos != null) ? pos.toFixed(1) : '—'}</td>`;
+    }
+    tr.innerHTML = cells;
+    tbody.appendChild(tr);
+  });
+  _exportRows = sorted.map(item => {
+    const row = { URL: item.url, Topic: item.topic || '', 'First seen': item.first_seen || '' };
+    if (USE_CLICKS) {
+      row.Clicks = item.clicks || 0;
+      row['Avg Position'] = item.position != null ? item.position : '';
+    }
+    return row;
+  });
+}
+
+function sortNewPagesBy(col) {
+  _newPagesSortDir = (_newPagesSortCol === col) ? _newPagesSortDir * -1 : (['url','topic','first_seen'].includes(col) ? 1 : -1);
+  _newPagesSortCol = col;
+  const table = document.querySelector('#panel-urls .url-table');
+  if (!table) return;
+  table.querySelector('thead').remove();
+  table.insertAdjacentHTML('afterbegin', buildNewPagesHeader());
+  renderNewPagesBody();
+}
+
+function showNewPages() {
+  const pages = DATASETS[activeKey].new_pages || [];
+  _newPagesSortCol = USE_CLICKS ? 'clicks' : 'first_seen';
+  _newPagesSortDir = -1;
+  _exportTitle = 'New pages last 7 days';
+
+  document.getElementById('panel-title').textContent = 'New pages — last 7 days';
+  const totalClicks = pages.reduce((s, u) => s + (u.clicks || 0), 0);
+  let meta = `${pages.length} URL${pages.length === 1 ? '' : 's'} first seen in the last 7 days`;
+  if (USE_CLICKS && totalClicks > 0) meta += ` · ${fmtK(totalClicks)} clicks · ${DATASETS[activeKey].label}`;
+  document.getElementById('panel-meta').textContent = meta;
+
+  const urlsEl = document.getElementById('panel-urls');
+  urlsEl.innerHTML = '';
+  if (pages.length === 0) {
+    urlsEl.innerHTML = '<div style="color:#8893a8;font-size:12px;padding:20px 0;">No new pages detected in the last 7 days.</div>';
+    document.getElementById('panel').classList.add('open');
+    return;
+  }
+  const table = document.createElement('table');
+  table.className = 'url-table';
+  table.innerHTML = buildNewPagesHeader();
+  table.appendChild(document.createElement('tbody'));
+  urlsEl.appendChild(table);
+  renderNewPagesBody();
+  document.getElementById('panel').classList.add('open');
+}
+// ---------- End New Pages Tab ----------
+
 // Mark range buttons with no data
 RANGE_KEYS.forEach(k => {
   const btn = document.querySelector(`.range-btn[data-range="${k}"]`);
@@ -1114,6 +1232,7 @@ document.querySelectorAll('.range-btn').forEach(btn => {
 updateSubtitle();
 updateLegend();
 renderStats();
+updateNewPagesBtn();
 initTree();
 
 window.addEventListener('resize', () => {
@@ -1154,11 +1273,30 @@ def main():
         t, total_clicks, group_summary = compute_stats(tree)
         if total is None:
             total = t
+        new_pages_list = []
+        for u in sorted(new_urls):
+            primary, sub = classify(u)
+            group_name = next(
+                (g for g, info in GROUPS.items() if primary in info["clusters"]), "Other"
+            )
+            m = gsc.get(u, {})
+            new_pages_list.append({
+                "url": u,
+                "clicks": m.get("clicks", 0),
+                "impressions": m.get("impressions", 0),
+                "position": m.get("position"),
+                "is_new": True,
+                "first_seen": known_urls.get(u, ""),
+                "group": group_name,
+                "topic": sub,
+            })
+        new_pages_list.sort(key=lambda x: (-x["clicks"], x["url"]))
         datasets[key] = {
             "tree": tree,
             "total_clicks": total_clicks,
             "group_summary": group_summary,
             "label": RANGE_LABELS[key],
+            "new_pages": new_pages_list,
         }
         print(f"  total_clicks={total_clicks:,}")
 
