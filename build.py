@@ -1090,7 +1090,7 @@ function showUrls(d) {
   table.appendChild(document.createElement('tbody'));
   urlsEl.appendChild(table);
   renderTableBody();
-
+  autoFitPanel();
   document.getElementById('panel').classList.add('open');
 }
 function showFilteredUrls(d, filteredUrls) {
@@ -1200,6 +1200,7 @@ function showNewPages() {
   table.appendChild(document.createElement('tbody'));
   urlsEl.appendChild(table);
   renderNewPagesBody();
+  autoFitPanel();
   document.getElementById('panel').classList.add('open');
 }
 // ---------- End New Pages Tab ----------
@@ -1226,6 +1227,22 @@ window.addEventListener('resize', () => {
   svg.attr("width", w).attr("height", h).attr("viewBox", [-w/2, -h/2, w, h]);
   fitToView();
 });
+
+// Auto-fit panel to content width on open
+function autoFitPanel() {
+  const panel = document.getElementById('panel');
+  const table = panel.querySelector('.url-table');
+  if (!table) return;
+  // Expand panel so the table isn't constrained, force nowrap to measure natural width
+  panel.style.width = '9999px';
+  const cells = table.querySelectorAll('td, th');
+  const saved = Array.from(cells).map(c => c.style.whiteSpace);
+  cells.forEach(c => { c.style.whiteSpace = 'nowrap'; });
+  const natural = table.scrollWidth + 36 + 8; // 18px padding each side + scroll buffer
+  cells.forEach((c, i) => { c.style.whiteSpace = saved[i]; });
+  const maxW = window.innerWidth - 200;
+  panel.style.width = Math.min(maxW, Math.max(320, natural)) + 'px';
+}
 
 // Panel resize drag
 (function() {
