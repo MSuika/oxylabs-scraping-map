@@ -1233,17 +1233,23 @@ function autoFitPanel() {
   const panel = document.getElementById('panel');
   const table = panel.querySelector('.url-table');
   if (!table) return;
-  // Panel must be visible (display:flex) before scrollWidth works
-  panel.style.width = '9999px';
-  const cells = table.querySelectorAll('td, th');
-  // Save and override all wrapping/breaking properties so we measure raw content width
-  const savedWS = [], savedWB = [], savedOW = [];
-  cells.forEach(c => {
-    savedWS.push(c.style.whiteSpace); savedWB.push(c.style.wordBreak); savedOW.push(c.style.overflowWrap);
-    c.style.whiteSpace = 'nowrap'; c.style.wordBreak = 'normal'; c.style.overflowWrap = 'normal';
+  // Clone into an unconstrained off-screen ghost to measure true min-content width.
+  // We must apply nowrap/word-break to every descendant (not just td/th) because
+  // .url-link has word-break:break-all which would still compress the measurement.
+  const ghost = document.createElement('div');
+  ghost.style.cssText = 'position:fixed;top:-9999px;left:-9999px;visibility:hidden;';
+  const clone = table.cloneNode(true);
+  clone.style.cssText = 'width:auto;table-layout:auto;';
+  clone.querySelectorAll('*').forEach(c => {
+    c.style.whiteSpace = 'nowrap';
+    c.style.wordBreak = 'normal';
+    c.style.overflowWrap = 'normal';
+    c.style.maxWidth = 'none';
   });
-  const natural = table.scrollWidth + 36 + 8;
-  cells.forEach((c, i) => { c.style.whiteSpace = savedWS[i]; c.style.wordBreak = savedWB[i]; c.style.overflowWrap = savedOW[i]; });
+  ghost.appendChild(clone);
+  document.body.appendChild(ghost);
+  const natural = clone.offsetWidth + 36 + 8;
+  document.body.removeChild(ghost);
   const maxW = window.innerWidth - 200;
   panel.style.width = Math.min(maxW, Math.max(320, natural)) + 'px';
 }
