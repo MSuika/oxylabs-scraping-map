@@ -1090,8 +1090,8 @@ function showUrls(d) {
   table.appendChild(document.createElement('tbody'));
   urlsEl.appendChild(table);
   renderTableBody();
-  autoFitPanel();
   document.getElementById('panel').classList.add('open');
+  autoFitPanel();
 }
 function showFilteredUrls(d, filteredUrls) {
   showUrls(d);
@@ -1200,8 +1200,8 @@ function showNewPages() {
   table.appendChild(document.createElement('tbody'));
   urlsEl.appendChild(table);
   renderNewPagesBody();
-  autoFitPanel();
   document.getElementById('panel').classList.add('open');
+  autoFitPanel();
 }
 // ---------- End New Pages Tab ----------
 
@@ -1233,13 +1233,17 @@ function autoFitPanel() {
   const panel = document.getElementById('panel');
   const table = panel.querySelector('.url-table');
   if (!table) return;
-  // Expand panel so the table isn't constrained, force nowrap to measure natural width
+  // Panel must be visible (display:flex) before scrollWidth works
   panel.style.width = '9999px';
   const cells = table.querySelectorAll('td, th');
-  const saved = Array.from(cells).map(c => c.style.whiteSpace);
-  cells.forEach(c => { c.style.whiteSpace = 'nowrap'; });
-  const natural = table.scrollWidth + 36 + 8; // 18px padding each side + scroll buffer
-  cells.forEach((c, i) => { c.style.whiteSpace = saved[i]; });
+  // Save and override all wrapping/breaking properties so we measure raw content width
+  const savedWS = [], savedWB = [], savedOW = [];
+  cells.forEach(c => {
+    savedWS.push(c.style.whiteSpace); savedWB.push(c.style.wordBreak); savedOW.push(c.style.overflowWrap);
+    c.style.whiteSpace = 'nowrap'; c.style.wordBreak = 'normal'; c.style.overflowWrap = 'normal';
+  });
+  const natural = table.scrollWidth + 36 + 8;
+  cells.forEach((c, i) => { c.style.whiteSpace = savedWS[i]; c.style.wordBreak = savedWB[i]; c.style.overflowWrap = savedOW[i]; });
   const maxW = window.innerWidth - 200;
   panel.style.width = Math.min(maxW, Math.max(320, natural)) + 'px';
 }
