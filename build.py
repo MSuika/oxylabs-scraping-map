@@ -483,8 +483,10 @@ HTML_TEMPLATE = r'''<!DOCTYPE html>
   .node.root > text { font-size: 14px; font-weight: 700; }
   .node.root > text.inner { fill: #0a0e1a; font-size: 10px; }
   .node.group > text { font-size: 13px; font-weight: 600; }
-  .panel { position: fixed; right: 16px; top: 110px; bottom: 16px; width: 460px; background: rgba(20,26,42,0.96); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.12); border-radius: 10px; padding: 18px; z-index: 90; display: none; flex-direction: column; }
+  .panel { position: fixed; right: 16px; top: 110px; bottom: 16px; width: 460px; min-width: 320px; max-width: calc(100vw - 200px); background: rgba(20,26,42,0.96); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.12); border-radius: 10px; padding: 18px; z-index: 90; display: none; flex-direction: column; }
   .panel.open { display: flex; }
+  .panel-resize { position: absolute; left: 0; top: 0; bottom: 0; width: 6px; cursor: ew-resize; border-radius: 10px 0 0 10px; }
+  .panel-resize:hover, .panel-resize.dragging { background: rgba(255,255,255,0.12); }
   .panel h2 { font-size: 15px; margin-bottom: 3px; padding-right: 24px; }
   .panel .meta { font-size: 11px; color: #8893a8; margin-bottom: 14px; }
   .panel .close { position: absolute; top: 10px; right: 10px; background: none; border: none; color: #8893a8; font-size: 18px; cursor: pointer; padding: 4px 8px; border-radius: 4px; line-height: 1; }
@@ -552,6 +554,7 @@ HTML_TEMPLATE = r'''<!DOCTYPE html>
 </div>
 <svg id="viz"></svg>
 <div class="panel" id="panel">
+  <div class="panel-resize" id="panel-resize"></div>
   <button class="close" onclick="closePanel()">&#xD7;</button>
   <h2 id="panel-title"></h2>
   <div class="meta" id="panel-meta"></div>
@@ -1132,10 +1135,6 @@ function buildNewPagesHeader() {
   let html = th('url', 'URL', '');
   html += th('topic', 'Topic', '');
   html += th('first_seen', 'First seen', 'num ');
-  if (USE_CLICKS) {
-    html += th('clicks', 'Clicks', 'num ');
-    html += th('position', 'Avg Pos', 'num ');
-  }
   return `<thead><tr>${html}</tr></thead>`;
 }
 
@@ -1158,29 +1157,18 @@ function renderNewPagesBody() {
     const path = item.url.replace('https://oxylabs.io', '') || '/';
     const tr = document.createElement('tr');
     let cells = `<td><a href="${item.url}" target="_blank" rel="noopener" class="url-link">${path}</a></td>`;
-    cells += `<td style="color:#b8c2d6;font-size:10px;max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${item.topic || ''}">${item.topic || '—'}</td>`;
+    cells += `<td style="color:#b8c2d6;font-size:10px;" title="${item.topic || ''}">${item.topic || '—'}</td>`;
     cells += `<td class="num" style="font-size:10px;white-space:nowrap;">${item.first_seen || '—'}</td>`;
-    if (USE_CLICKS) {
-      const pos = item.position;
-      const noData = !item.clicks && !item.impressions;
-      cells += `<td class="num">${noData ? '—' : (item.clicks || 0).toLocaleString()}</td>`;
-      cells += `<td class="pos ${noData ? 'pos-low' : posClass(pos)}">${noData ? '—' : (pos != null) ? pos.toFixed(1) : '—'}</td>`;
-    }
     tr.innerHTML = cells;
     tbody.appendChild(tr);
   });
-  _exportRows = sorted.map(item => {
-    const row = { URL: item.url, Topic: item.topic || '', 'First seen': item.first_seen || '' };
-    if (USE_CLICKS) {
-      row.Clicks = item.clicks || 0;
-      row['Avg Position'] = item.position != null ? item.position : '';
-    }
-    return row;
-  });
+  _exportRows = sorted.map(item => ({
+    URL: item.url, Topic: item.topic || '', 'First seen': item.first_seen || '',
+  }));
 }
 
 function sortNewPagesBy(col) {
-  _newPagesSortDir = (_newPagesSortCol === col) ? _newPagesSortDir * -1 : (['url','topic','first_seen'].includes(col) ? 1 : -1);
+  _newPagesSortDir = (_newPagesSortCol === col) ? _newPagesSortDir * -1 : (col === 'url' || col === 'topic' ? 1 : -1);
   _newPagesSortCol = col;
   const table = document.querySelector('#panel-urls .url-table');
   if (!table) return;
@@ -1191,14 +1179,12 @@ function sortNewPagesBy(col) {
 
 function showNewPages() {
   const pages = DATASETS[activeKey].new_pages || [];
-  _newPagesSortCol = USE_CLICKS ? 'clicks' : 'first_seen';
+  _newPagesSortCol = 'first_seen';
   _newPagesSortDir = -1;
   _exportTitle = 'New pages last 7 days';
 
   document.getElementById('panel-title').textContent = 'New pages — last 7 days';
-  const totalClicks = pages.reduce((s, u) => s + (u.clicks || 0), 0);
   let meta = `${pages.length} URL${pages.length === 1 ? '' : 's'} first seen in the last 7 days`;
-  if (USE_CLICKS && totalClicks > 0) meta += ` · ${fmtK(totalClicks)} clicks · ${DATASETS[activeKey].label}`;
   document.getElementById('panel-meta').textContent = meta;
 
   const urlsEl = document.getElementById('panel-urls');
@@ -1240,6 +1226,34 @@ window.addEventListener('resize', () => {
   svg.attr("width", w).attr("height", h).attr("viewBox", [-w/2, -h/2, w, h]);
   fitToView();
 });
+
+// Panel resize drag
+(function() {
+  const handle = document.getElementById('panel-resize');
+  const panel = document.getElementById('panel');
+  let dragging = false, startX, startW;
+  handle.addEventListener('mousedown', e => {
+    dragging = true;
+    startX = e.clientX;
+    startW = panel.offsetWidth;
+    handle.classList.add('dragging');
+    document.body.style.cursor = 'ew-resize';
+    document.body.style.userSelect = 'none';
+    e.preventDefault();
+  });
+  document.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    const newW = Math.max(320, Math.min(window.innerWidth - 200, startW + (startX - e.clientX)));
+    panel.style.width = newW + 'px';
+  });
+  document.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = false;
+    handle.classList.remove('dragging');
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+  });
+})();
 </script>
 </body>
 </html>'''
