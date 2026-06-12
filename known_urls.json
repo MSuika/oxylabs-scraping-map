@@ -1,4 +1,5 @@
 {
+  "https://oxylabs.io": "2026-06-12",
   "https://oxylabs.io/about-us": "2026-05-11",
   "https://oxylabs.io/affiliates": "2026-05-11",
   "https://oxylabs.io/blog": "2026-05-11",
@@ -395,6 +396,7 @@
   "https://oxylabs.io/blog/puppeteer-vs-selenium": "2026-05-11",
   "https://oxylabs.io/blog/python-cache-how-to-use-effectively": "2026-05-11",
   "https://oxylabs.io/blog/python-class-names": "2026-05-11",
+  "https://oxylabs.io/blog/python-headless-browser-automation": "2026-06-12",
   "https://oxylabs.io/blog/python-parse-json": "2026-05-11",
   "https://oxylabs.io/blog/python-parse-xml": "2026-05-11",
   "https://oxylabs.io/blog/python-requests": "2026-05-11",
